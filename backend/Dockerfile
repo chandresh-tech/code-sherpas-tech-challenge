@@ -9,6 +9,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
+RUN npx prisma generate
+
 EXPOSE 3333
 
-CMD ["sh", "-c", "pnpm start:dev"]
+CMD ["sh", "-c", "npx prisma migrate deploy && pnpm start:dev"]
