@@ -3,12 +3,41 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
 import { Transaction } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class TransactionService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async getTransactionHistory(
+    accountId: string,
+    limit: number,
+    cursor?: string,
+  ): Promise<{ transactions: Transaction[]; nextCursor?: string }> {
+    if (limit <= 0) {
+      throw new NotFoundException('Limit must be greater than 0.');
+    }
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: { account_id: accountId },
+      orderBy: { created_at: 'desc' },
+      take: limit + 1,
+      ...(cursor
+        ? {
+            cursor: { id: cursor },
+          }
+        : {}),
+    });
+
+    let nextCursor: string | undefined = null;
+    if (transactions.length > limit) {
+      nextCursor = transactions[limit].id;
+      transactions.pop();
+    }
+
+    return { transactions, nextCursor };
+  }
 
   async deposit(accountId: string, amount: number): Promise<Transaction> {
     if (amount <= 0) {
@@ -94,6 +123,18 @@ export class TransactionService {
 
     if (!fromAccount || !toAccount) {
       throw new BadRequestException('One or both accounts do not exist.');
+    }
+
+    if (fromAccount.id === toAccount.id) {
+      throw new BadRequestException(
+        'Transfer can not be made to the same account. The source and destination accounts cannot be the same.',
+      );
+    }
+
+    if (fromAccount.type !== 'IBAN' || toAccount.type !== 'IBAN') {
+      throw new BadRequestException(
+        'One or both accounts are not IBAN accounts.',
+      );
     }
 
     if (fromAccount.balance < amount) {
